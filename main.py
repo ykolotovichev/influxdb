@@ -1,5 +1,5 @@
 __author__ = 'Yury'
-from newapi import InfluxDBClient, DummyMeasurements
+from influxdb import InfluxDBClient, DummyMeasurements
 from random import random
 import threading
 import multiprocessing
