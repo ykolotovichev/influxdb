@@ -1,5 +1,5 @@
 __author__ = 'Yury'
-from influxdb import InfluxDBClient, DummyMeasurements
+from influxdb import InfluxDBClient, Dummy
 from random import random
 import threading
 import multiprocessing
@@ -47,7 +47,7 @@ def send_to_influx(series, chunk_sizes, name):
 
             print('%s: Sending parsel %d' % (name, int(parcel_num+1)))
             try:
-                dummies = DummyMeasurements(series, chunk_size, decimals=3)
+                dummies = Dummy(series, chunk_size, decimals=3)
                 dbclient.write(dbname, dummies.generate(), compress=False)
                 print('%s: Points sent: %d' % (name, chunk_size))
             except:
