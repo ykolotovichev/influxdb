@@ -1,5 +1,5 @@
 __author__ = 'Yury'
-from influxdb import InfluxDBClient, Dummy
+from influxdb import InfluxDBClient, DummyPoint
 from random import random
 import threading
 import multiprocessing
@@ -9,16 +9,16 @@ from ykolutils.monitoring import get_remote_directory_size
 from time import time, strftime, localtime, sleep
 
 '''
-def make_point(series, fields, timestamp=None, precision='u', tags=None):
+def make_point(name, fields, timestamp=None, precision='u', tags=None):
     if timestamp:
-        point = {'name': series,
+        point = {'name': name,
                  'time': timestamp,
                  'precision': precision,
                  'fields': fields,
                  'tags': tags
                  }
     else:
-        point = {'name': series,
+        point = {'name': name,
                  'fields': fields,
                  'tags': tags
                  }
@@ -43,11 +43,11 @@ def send_to_influx(series, chunk_sizes, name):
 
         for parcel_num, chunk_size in enumerate(chunk_sizes):
 
-            #points = ''.join(points_generator(series, chunk_size, decimals=3))
+            #points = ''.join(points_generator(name, chunk_size, decimals=3))
 
             print('%s: Sending parsel %d' % (name, int(parcel_num+1)))
             try:
-                dummies = Dummy(series, chunk_size, decimals=3)
+                dummies = DummyPoint(series, chunk_size, decimals=3)
                 dbclient.write(dbname, dummies.generate(), compress=False)
                 print('%s: Points sent: %d' % (name, chunk_size))
             except:
@@ -56,14 +56,14 @@ def send_to_influx(series, chunk_sizes, name):
 
 def write_in_threads():
 
-    print('%d points will be sent by every of %d measurement system. TOTAL: %d ' % (N, NSYS, N*NSYS))
+    print('%d points will be sent by every of %d measurement1 system. TOTAL: %d ' % (N, NSYS, N*NSYS))
     print('Points per JSON parcel: ', CHUNK)
 
     threads = []
     for i in range(NSYS):
         sizes = chunksize_gen(N, CHUNK)
         print(type(sizes))
-        t = threading.Thread(target=send_to_influx, args=(), kwargs={'series': 'Tilt_' + str(i+1),
+        t = threading.Thread(target=send_to_influx, args=(), kwargs={'name': 'Tilt_' + str(i+1),
                                                                      'chunk_sizes': sizes,
                                                                      'name': 'Thread ' + str(i+1)})
         threads.append(t)
@@ -84,7 +84,7 @@ def stats():
 
     try:
         points_in_series = []
-        for item in q['results'][0]['series']:
+        for item in q['results'][0]['name']:
             points_in_series.append(item['values'][0][1])
         points_in_db = sum(points_in_series)
     except Exception:
@@ -142,13 +142,13 @@ if __name__ == '__main__':
 
     # -----PARAMETERS------------------ #
     NPOINTS = 5e+6  # Total number of points to write
-    NSYS = 10  # Number of measurement systems(running in separate thread)
+    NSYS = 10  # Number of measurement1 systems(running in separate thread)
     CHUNK = 10000  # Max number of points in a single chunk
 
     STATS_LOG = 'stats.log'
     # -----PARAMETERS------------------ #
 
-    N = math.ceil(NPOINTS / NSYS)  # points to send for a single measurement system
+    N = math.ceil(NPOINTS / NSYS)  # points to send for a single measurement1 system
     CHUNK = N if CHUNK > NPOINTS / NSYS else CHUNK  # max CHUNK value should be limited
 
     with open(STATS_LOG, 'w') as f:
@@ -165,7 +165,7 @@ if __name__ == '__main__':
 
     #q = dbclient.query(dbname, 'select count(T) from /Tilt_*/')
     #print('error' in q['results'][0])
-    #print(q['results'][0]['series'][1]['values'][0][1])
+    #print(q['results'][0]['name'][1]['values'][0][1])
 
 
 

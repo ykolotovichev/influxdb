@@ -4,7 +4,8 @@ import requests
 import gzip
 from ykolutils.timing import Timer
 
-from measurements import Dummy
+from measurements import DummyPoint, Measurement
+
 
 
 class InfluxDBClient:
@@ -72,8 +73,8 @@ if __name__ == '__main__':
 
 
 
-    #host = '46.101.128.140'
-    host = '10.6.74.70'
+    host = '46.101.128.140'
+    #host = '10.6.74.70'
     port = 8086
 
     dbname = 'unittestdb'
@@ -83,13 +84,20 @@ if __name__ == '__main__':
     dbclient = InfluxDBClient(host=host, port=port, http_timeout=60)
     dbclient.create_database(dbname)
 
-    dummies = Dummy('Tilt5', npoints=1000, decimals=4)
+    dummies = DummyPoint('Tilt5', npoints=1000, decimals=4)
 
     with Timer():
         dbclient.write(dbname=dbname, points=dummies.generate(), compress=False, precision='n')
 
     with Timer():
         dbclient.write(dbname=dbname, points=dummies.to_bytes(), compress=False, precision='n')
+
+
+    measurement1 = Measurement(name='TestSeries1',
+                                  fields={'X': -100, 'Y': 720.0, 'T':  30.0},
+                                  timestamp='2015-12-30 10:36:43.567')
+
+
 
 
 

@@ -54,17 +54,21 @@ class Measurement:
 
         return str_rep.encode()  # converting str to bytes
 
-class Dummy:
+    def __repr__(self):
+        return self.to_bytes().decode()
 
-    def __init__(self, series,  npoints=1, decimals=3):
-        self.series = series
+
+class DummyPoint:
+
+    def __init__(self, name,  npoints=1, decimals=3):
+        self.name = name
         self.npoints = npoints
         self.decimals = decimals
 
     def generate(self):
         start_epoch = randint(1e+9, int(time()*1e+9))
         for i in range(0, self.npoints):
-            m = Measurement(name=self.series,
+            m = Measurement(name=self.name,
                             fields={'X': random() * -720.0, 'Y': random() * 720.0, 'T': random() * 30.0},
                             timestamp=start_epoch + i)
 
@@ -78,13 +82,25 @@ class Dummy:
 #comment
 if __name__ == '__main__':
 
-        measurement = Measurement(name='TestSeries',
+        measurement1 = Measurement(name='TestSeries1',
                                   fields={'X': -100, 'Y': 720.0, 'T':  30.0},
                                   timestamp='2015-12-30 10:36:43.567')
 
-        print(measurement.to_bytes(decimals=5))
+        measurement2 = Measurement(name='TestSeries2',
+                                  fields={'X': -200, 'Y': 700.0, 'T':  25.0},
+                                  timestamp='2015-12-30 10:36:43.5')
+
+        measurement3 = Measurement(name='TestSeries3',
+                                  fields={'X': -20, 'Y': 70.0, 'T':  15.0},
+                                  timestamp='2015-12-30 10:34:43.5')
 
 
-        dummy = Dummy(series='TestSeries', npoints=3, decimals=6)
+
+        print(measurement1.to_bytes(decimals=5))
+        print(measurement1)
+
+        dummy = DummyPoint(name='TestSeries', npoints=3, decimals=4)
         print(next(dummy.generate()))
         print(dummy.to_bytes())
+
+
