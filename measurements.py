@@ -3,6 +3,8 @@ __author__ = 'Yury'
 from time import time
 from random import random, randint
 from datetime import datetime
+from ykolutils.timing import Timer
+import gzip
 
 
 
@@ -36,7 +38,7 @@ class Measurement:
                 except ValueError:
                     pass
 
-    def to_bytes(self, decimals=3):
+    def to_string(self, decimals=3):
         # Making tags string representation
         tags_rep = ''
         if self.tags:
@@ -52,13 +54,23 @@ class Measurement:
         else:
             str_rep = '%s%s %s\n' % (self.name, tags_rep, fields_rep)
 
-        return str_rep.encode()  # converting str to bytes
+        return str_rep
+
+    def to_bytes(self, decimals=3):
+        return self.to_string(decimals).encode()
 
     def __repr__(self):
-        return self.to_bytes().decode()
+        return self.to_string()
+
+    def __str__(self):
+        return self.to_string().strip()
 
 
-class DummyPoint:
+
+class DummyPoints:
+    """
+    Dummy points generator. Useful for unit testing.
+    """
 
     def __init__(self, name,  npoints=1, decimals=3):
         self.name = name
@@ -74,12 +86,27 @@ class DummyPoint:
 
             yield m.to_bytes(decimals=self.decimals)
 
-    def to_bytes(self):
+    def dump(self, file='', compress=False):
+        if file:
+            try:
+                with open(file, 'wb') as f:
+                    if not compress:
+                        for point in self.generate():
+                            f.write(point)
+                    else:
+                        f.write(gzip.compress(b''.join(self.generate())))
+            except IOError as err:
+                print('Dump error: ', err)
+
         points = b''.join(self.generate())
         return points
 
+    def __iter__(self):
+        return iter(self.generate())
 
-#comment
+
+
+
 if __name__ == '__main__':
 
         measurement1 = Measurement(name='TestSeries1',
@@ -96,11 +123,21 @@ if __name__ == '__main__':
 
 
 
+
         print(measurement1.to_bytes(decimals=5))
+        print(measurement1.to_string())
         print(measurement1)
 
-        dummy = DummyPoint(name='TestSeries', npoints=3, decimals=4)
-        print(next(dummy.generate()))
-        print(dummy.to_bytes())
+
+        dummy = DummyPoints(name='TestSeries', npoints=3, decimals=4)
+        dummy.dump('dump.txt')
+
+
+
+
+
+
+
+
 
 
