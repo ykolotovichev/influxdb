@@ -1,5 +1,7 @@
-__author__ = 'Yury'
-from influxdb import InfluxDBClient, DummyPoints
+__author__ = 'Yury A. Kolotovichev'
+
+from influxdb import InfluxDBClient
+from measurements import DummyPoints
 from random import random
 import threading
 import multiprocessing
@@ -7,6 +9,7 @@ import math
 from ykolutils.timing import Timer
 from ykolutils.monitoring import get_remote_directory_size
 from time import time, strftime, localtime, sleep
+import logging
 
 '''
 def make_point(name, fields, timestamp=None, precision='u', tags=None):
@@ -25,33 +28,38 @@ def make_point(name, fields, timestamp=None, precision='u', tags=None):
     return point
 '''
 
-def chunksize_gen(n, chunk):  # generates chunks sizes
-    """
-     n - number of points to be send by each system
-     chunk - maximum number of points in single JSON
-    """
-
-    for i in range(int(n / chunk + math.ceil((n % chunk) / chunk))):
-        n -= chunk
-        chunksize = chunk if n >= 0 else n+chunk
-        yield chunksize
 
 
 
-def send_to_influx(series, chunk_sizes, name):
+
+def send_to_influx(dbclient, dbname, series, name, npoints, maxchunk):
+
+    def chunksize_gen(n, chunk):  # generates chunks sizes
+        """
+         n - number of points to be send by each system
+         chunk - maximum number of points in single JSON
+        """
+
+        for i in range(int(n / chunk + math.ceil((n % chunk) / chunk))):
+            n -= chunk
+            chunksize = chunk if n >= 0 else n+chunk
+            yield chunksize
+
     with Timer(name):
 
-        for parcel_num, chunk_size in enumerate(chunk_sizes):
+        for parcel_num, chunk_size in enumerate(chunksize_gen(npoints, maxchunk)):
 
             #points = ''.join(points_generator(name, chunk_size, decimals=3))
 
             print('%s: Sending parsel %d' % (name, int(parcel_num+1)))
             try:
-                dummies = DummyPoints(series, chunk_size, decimals=3)
-                dbclient.write(dbname, dummies.generate(), gzipped=False)
+                dummies = DummyPoints(series, npoints=chunk_size, decimals=3, delta_seconds=600)
+                #print(dummies.dump())
+                #dbclient.write(dbname, points=dummies, gzipped=False)
+                dbclient.write(dbname=dbname, points=dummies, precision='n')
                 print('%s: Points sent: %d' % (name, chunk_size))
-            except:
-                print('%s: Error writing data.' % name)
+            except Exception as err:
+                print('%s: Error writing data: %s' % (name, err))
 
 
 def write_in_threads():
@@ -61,15 +69,15 @@ def write_in_threads():
 
     threads = []
     for i in range(NSYS):
-        sizes = chunksize_gen(N, CHUNK)
-        print(type(sizes))
-        t = threading.Thread(target=send_to_influx, args=(), kwargs={'name': 'Tilt_' + str(i+1),
-                                                                     'chunk_sizes': sizes,
-                                                                     'name': 'Thread ' + str(i+1)})
+        t = multiprocessing.Process(target=send_to_influx, args=(), kwargs={'series': 'Tilt_' + str(i+1),
+                                                                            'npoints': N,
+                                                                            'maxchunk': CHUNK,
+                                                                            'dbclient': dbclient,
+                                                                            'dbname': dbname,
+                                                                            'name': 'Thread ' + str(i+1)})
         threads.append(t)
         t.start()
     return threads
-
 
 def stats():
 
@@ -117,13 +125,20 @@ def gather_stats():
 
 
 if __name__ == '__main__':
+
+    logging.basicConfig(format='%(levelname)-8s [%(asctime)s]  %(message)s',
+                        level=logging.INFO)
+    logger = multiprocessing.get_logger()
+    logger.setLevel(logging.INFO)
+
     # -----SSH credentials------------- #
     ssh_username = 'guest'
     ssh_password = 'guest'
 
 
     # -----DB settings----------------- #
-    host = '10.6.74.70'
+    host = '46.101.128.140'
+    #host = '10.6.74.70'
     port = 8086
 
     dbname = 'testdb2'
@@ -141,9 +156,9 @@ if __name__ == '__main__':
     # -----DB settings----------------- #
 
     # -----PARAMETERS------------------ #
-    NPOINTS = 5e+6  # Total number of points to write
+    NPOINTS = 1e+6  # Total number of points to write
     NSYS = 10  # Number of measurement1 systems(running in separate thread)
-    CHUNK = 10000  # Max number of points in a single chunk
+    CHUNK = 5000  # Max number of points in a single chunk
 
     STATS_LOG = 'stats.log'
     # -----PARAMETERS------------------ #
@@ -157,9 +172,8 @@ if __name__ == '__main__':
         f.write('Number of points in a single chunk: %d\r\n' % CHUNK)
 
     dbclient.create_database(dbname)
-    stats()
     writing_threads = write_in_threads()
-    gather_stats()
+
 
 
 
