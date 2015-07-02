@@ -1,9 +1,9 @@
 __author__ = 'Yury A. Kolotovichev'
 
+
+import unittest
+from measurements import Measurement, DummyPoints
 from influxdb import InfluxDBClient
-from measurements import DummyPoints
-from random import random
-import threading
 import multiprocessing
 import math
 from ykolutils.timing import Timer
@@ -11,22 +11,116 @@ from ykolutils.monitoring import get_remote_directory_size
 from time import time, strftime, localtime, sleep
 import logging
 
-'''
-def make_point(name, fields, timestamp=None, precision='u', tags=None):
-    if timestamp:
-        point = {'name': name,
-                 'time': timestamp,
-                 'precision': precision,
-                 'fields': fields,
-                 'tags': tags
-                 }
-    else:
-        point = {'name': name,
-                 'fields': fields,
-                 'tags': tags
-                 }
-    return point
-'''
+
+class DBClientTest(unittest.TestCase):
+
+    host = '46.101.128.140'
+    port = 8086
+
+    dbname = 'unittestdb'
+    user = 'root'
+    password = 'root'
+
+    series = 'Tilt'
+
+    def setUp(self):  # Executes before every testcase
+
+        self.single_point = Measurement(name=self.series,
+                                        fields={'X': -100, 'Y': 720.0, 'T':  30.0},
+                                        timestamp='2015-12-30 10:36:43.567')
+
+        self.dummies = DummyPoints(self.series, npoints=1000, decimals=4, delta_seconds=600)
+
+        self.dbclient = InfluxDBClient(host=self.host, port=self.port, http_timeout=60)
+        self.dbclient.create_database(self.dbname)
+
+        self.startTime = time()
+
+    def tearDown(self):  # Executes after every testcase
+        t = time() - self.startTime
+        print('Test <%s> executed in: %.3f seconds' % (self.id(), t))
+
+        self.dbclient.drop_database(self.dbname)
+
+    @unittest.skip("Skipped")
+    def test_InfluxDBClient_constructor(self):
+        dbclient = InfluxDBClient(host=self.host, port=self.port, http_timeout=60)
+        print(dbclient)
+
+    @unittest.skip("Skipped")
+    def test_create_database(self):
+        dbclient = InfluxDBClient(host=self.host, port=self.port, http_timeout=60)
+        dbclient.create_database(self.dbname)
+
+    @unittest.skip("Skipped")
+    def test_write_single_Measurement(self):
+        self.dbclient.write(dbname=self.dbname, points=self.single_point.to_bytes(), precision='n')
+
+    @unittest.skip("Skipped")
+    def test_write_in_memory_dumped_bytearray(self):
+        # bytearray (or bytes, dumped in-memory) (non-chunked, not compressed)
+        self.dbclient.write(dbname=self.dbname, points=self.dummies.dump(), precision='n')
+
+    @unittest.skip("Skipped")
+    def test_chunked_write(self):
+        # generator (chunked HTTP POST)
+        self.dbclient.write(dbname=self.dbname, points=self.dummies, precision='n')
+
+    @unittest.skip("Skipped")
+    def test_write_gzipped_from_memory(self):
+        # bytearray (or bytes, dumped in-memory) (non-chunked, compressed)
+        self.dbclient.write(dbname=self.dbname, points=self.dummies.dump(compress=True), precision='n', gzipped=True)
+
+    @unittest.skip("Skipped")
+    def test_write_100000_points_in_10000_chunks_single_process(self):
+        for chunk in range(0, 10):
+            print('Sending chunk ', chunk)
+            dummies = DummyPoints(self.series, npoints=10000, decimals=4, delta_seconds=600)
+            self.dbclient.write(dbname=self.dbname, points=dummies.dump(), precision='n')
+
+        sleep(10)
+        r = self.dbclient.query(self.dbname, 'SELECT count(Y) from %s where time < now() + 36500d' % self.series)
+        print(r)
+
+    def write_worker(self, npoints, nchunks):
+        for chunk in range(0, nchunks):
+            print('Sending chunk ', chunk)
+            dummies = DummyPoints(self.series, npoints=npoints, decimals=4, delta_seconds=6000)
+            self.dbclient.write(dbname=self.dbname, points=dummies.dump(), precision='n')
+
+    def test_write_100000_points_in_10000_chunks_multiprocess(self):
+
+        nworkers = 2
+        npoints = 10000
+        nchunks = 5
+
+        workers = []
+        for i in range(nworkers):
+            p = multiprocessing.Process(target=self.write_worker, args=(), kwargs={'npoints': npoints,
+                                                                                   'nchunks': nchunks})
+            workers.append(p)
+            p.start()
+
+        for p in workers:
+            p.join()
+
+
+
+        sleep(10)
+        r = self.dbclient.query(self.dbname, 'SELECT count(Y) from %s where time < now() + 36500d' % self.series)
+        print(r)
+
+
+
+
+
+def influx_sender(host, port, dbname, dummies):
+    dbclient = InfluxDBClient(host=host, port=port, http_timeout=60)
+    dbclient.write(dbname=dbname, points=dummies, precision='n')
+
+
+
+
 
 
 
@@ -56,7 +150,7 @@ def send_to_influx(dbclient, dbname, series, name, npoints, maxchunk):
                 dummies = DummyPoints(series, npoints=chunk_size, decimals=3, delta_seconds=600)
                 #print(dummies.dump())
                 #dbclient.write(dbname, points=dummies, gzipped=False)
-                dbclient.write(dbname=dbname, points=dummies, precision='n')
+                dbclient.write(dbname=dbname, points=dummies.dump(), precision='n')
                 print('%s: Points sent: %d' % (name, chunk_size))
             except Exception as err:
                 print('%s: Error writing data: %s' % (name, err))
@@ -125,11 +219,44 @@ def gather_stats():
 
 
 if __name__ == '__main__':
+    # -----DB settings----------------- #
+    host = '46.101.128.140'
+    #host = '10.6.74.70'
+    port = 8086
+
+    dbname = 'unittestdb'
+    user = 'root'
+    password = 'root'
+
+    series = 'Tilt'
+
+
 
     logging.basicConfig(format='%(levelname)-8s [%(asctime)s]  %(message)s',
                         level=logging.INFO)
+
+    unittest.main(verbosity=2)
+
+    # dbclient = InfluxDBClient(host=host, port=port, http_timeout=60)
+    # dbclient.create_database(dbname)
+    # with Timer('Single sender'):
+    #     dummies = DummyPoints(series, npoints=10000, decimals=3, delta_seconds=600)
+    #     influx_sender(host, port, dbname, dummies.dump())
+    #
+    # dbclient.drop_database(dbname)
+
+
+
+
+
+    """
+    #logging.basicConfig(format='%(levelname)-8s [%(asctime)s]  %(message)s',
+                        #level=logging.INFO)
+    #multiprocessing.log_to_stderr()
     logger = multiprocessing.get_logger()
     logger.setLevel(logging.INFO)
+
+
 
     # -----SSH credentials------------- #
     ssh_username = 'guest'
@@ -137,8 +264,8 @@ if __name__ == '__main__':
 
 
     # -----DB settings----------------- #
-    host = '46.101.128.140'
-    #host = '10.6.74.70'
+    #host = '46.101.128.140'
+    host = '10.6.74.70'
     port = 8086
 
     dbname = 'testdb2'
@@ -157,8 +284,8 @@ if __name__ == '__main__':
 
     # -----PARAMETERS------------------ #
     NPOINTS = 1e+6  # Total number of points to write
-    NSYS = 10  # Number of measurement1 systems(running in separate thread)
-    CHUNK = 5000  # Max number of points in a single chunk
+    NSYS = 8  # Number of measurement1 systems(running in separate thread)
+    CHUNK = 10000  # Max number of points in a single chunk
 
     STATS_LOG = 'stats.log'
     # -----PARAMETERS------------------ #
@@ -182,7 +309,7 @@ if __name__ == '__main__':
     #print(q['results'][0]['name'][1]['values'][0][1])
 
 
-
+    """
 
 
 
