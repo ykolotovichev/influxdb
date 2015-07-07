@@ -14,7 +14,9 @@ import logging
 
 class DBClientTest(unittest.TestCase):
 
-    host = '46.101.128.140'
+    #host = '46.101.128.140'
+    host = '10.6.74.70'
+
     port = 8086
 
     dbname = 'unittestdb'
@@ -31,7 +33,7 @@ class DBClientTest(unittest.TestCase):
 
         self.dummies = DummyPoints(self.series, npoints=1000, decimals=4, delta_seconds=600)
 
-        self.dbclient = InfluxDBClient(host=self.host, port=self.port, http_timeout=60)
+        self.dbclient = InfluxDBClient(host=self.host, port=self.port, http_timeout=600)
         self.dbclient.create_database(self.dbname)
 
         self.startTime = time()
@@ -71,12 +73,14 @@ class DBClientTest(unittest.TestCase):
         # bytearray (or bytes, dumped in-memory) (non-chunked, compressed)
         self.dbclient.write(dbname=self.dbname, points=self.dummies.dump(compress=True), precision='n', gzipped=True)
 
-    @unittest.skip("Skipped")
+    #@unittest.skip("Skipped")
     def test_write_100000_points_in_10000_chunks_single_process(self):
         for chunk in range(0, 10):
             print('Sending chunk ', chunk)
             dummies = DummyPoints(self.series, npoints=10000, decimals=4, delta_seconds=600)
-            self.dbclient.write(dbname=self.dbname, points=dummies.dump(), precision='n')
+            pts = dummies.dump()
+            print('Sent bytes: ', len(pts))
+            self.dbclient.write(dbname=self.dbname, points=dummies, precision='n')
 
         sleep(10)
         r = self.dbclient.query(self.dbname, 'SELECT count(Y) from %s where time < now() + 36500d' % self.series)
@@ -88,9 +92,10 @@ class DBClientTest(unittest.TestCase):
             dummies = DummyPoints(self.series, npoints=npoints, decimals=4, delta_seconds=6000)
             self.dbclient.write(dbname=self.dbname, points=dummies.dump(), precision='n')
 
+    @unittest.skip("Skipped")
     def test_write_100000_points_in_10000_chunks_multiprocess(self):
 
-        nworkers = 2
+        nworkers = 4
         npoints = 10000
         nchunks = 5
 
@@ -220,8 +225,8 @@ def gather_stats():
 
 if __name__ == '__main__':
     # -----DB settings----------------- #
-    host = '46.101.128.140'
-    #host = '10.6.74.70'
+    #host = '46.101.128.140'
+    host = '10.6.74.70'
     port = 8086
 
     dbname = 'unittestdb'
@@ -233,7 +238,7 @@ if __name__ == '__main__':
 
 
     logging.basicConfig(format='%(levelname)-8s [%(asctime)s]  %(message)s',
-                        level=logging.INFO)
+                        level=logging.DEBUG)
 
     unittest.main(verbosity=2)
 
