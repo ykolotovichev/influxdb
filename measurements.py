@@ -3,9 +3,10 @@ __author__ = 'Yury A. Kolotovichev'
 from time import time
 from random import random, randint
 from datetime import datetime
-from ykolutils.timing import Timer
 import gzip
 import logging
+
+
 
 
 
@@ -36,7 +37,11 @@ class Measurement:
         """
 
         if datetime_string:
-            patterns = ('%d.%m.%Y %H:%M:%S', '%Y-%m-%d %H:%M:%S', '%Y-%m-%d %H:%M:%S.%f')
+            patterns = ('%d.%m.%Y %H:%M:%S',
+                        '%Y-%m-%d %H:%M:%S',
+                        '%Y-%m-%d %H:%M:%S.%f',
+                        '%Y-%m-%dT%H:%M:%S',
+                        '%Y-%m-%dT%H:%M:%S.%f')
             precision_multipliers = {'n': 1e+9, 'u': 1e+6, 'ms': 1e+3, 's': 1, 'm': 1/60, 'h': 1/3600}
             for pattern in patterns:
                 try:
@@ -81,13 +86,36 @@ class Measurement:
         return self.to_string().strip()
 
 
+class Container:
+
+    def __init__(self, *measurements):
+        self.points = []
+        self.points = [measurement for measurement in measurements]
+
+    def append(self, *measurements):
+        for measurement in measurements:
+            self.points.append(measurement)
+
+    def dump(self, decimals=3):
+        array = bytearray()
+        for measurement in self.points:
+            array.extend(measurement.to_bytes(decimals=decimals))
+        return array
+
+    def __iter__(self):
+        return iter(self.points)
+
+    def __str__(self):
+        return 'Contains: %d Measurements' % len(self.points)
+
+
 
 class DummyPoints:
     """
     Dummy points generator. Useful for unit testing.
     """
 
-    def __init__(self, name,  npoints=1, decimals=3, delta_seconds=1):
+    def __init__(self, name,  npoints=1, decimals=3, delta_seconds=1, opt='one_point_per_series'):
         """
         :param name: time series name
         :param npoints: number of points to generate
@@ -99,20 +127,35 @@ class DummyPoints:
         self.npoints = npoints
         self.decimals = decimals
         self.delta_seconds = delta_seconds
+        self.start_epoch = randint(1e+9, int(time()*1e+9))
+        self.opt = opt
 
-    def generate(self):
+    def generate(self, opt):
         """
         Generates dummy points in form of Influxdb line protocol (bytes)
         :return: point generator
         """
-        start_epoch = randint(1e+9, int(time()*1e+9))
-        for i in range(0, self.npoints):
-            m = Measurement(name=self.name,
-                            fields={'X': random() * -720.0, 'Y': random() * 720.0, 'T': random() * 30.0},
-                            timestamp=start_epoch + i*1e+9*self.delta_seconds)
-            m.to_bytes(decimals=self.decimals)
 
-            yield m.to_bytes(decimals=self.decimals)
+        if opt == 'single_series':
+            for i in range(0, self.npoints):
+                ts = self.start_epoch + i*1e+9*self.delta_seconds
+                m = Measurement(name=self.name,
+                                fields={'X': random() * -720.0, 'Y': random() * 720.0, 'T': random() * 30.0},
+                                timestamp=ts)
+                m.to_bytes(decimals=self.decimals)
+
+                yield m.to_bytes(decimals=self.decimals)
+            self.start_epoch = ts + self.delta_seconds * 1e+9  # update start_epoch to make points consequent
+
+        elif opt == 'one_point_per_series':
+            start_epoch = int(time())*1e+9
+            for i in range(0, self.npoints):
+                m = Measurement(name='%s_%d' % (self.name, i),
+                                fields={'X': random() * -720.0, 'Y': random() * 720.0, 'T': random() * 30.0},
+                                timestamp=start_epoch)
+                m.to_bytes(decimals=self.decimals)
+
+                yield m.to_bytes(decimals=self.decimals)
 
     def dump(self, file='', compress=False):
         """
@@ -126,22 +169,22 @@ class DummyPoints:
             try:
                 with open(file, 'wb') as f:
                     if compress:
-                        f.write(gzip.compress(b''.join(self.generate())))
+                        f.write(gzip.compress(b''.join(self.generate(opt=self.opt))))
                     else:
-                        for point in self.generate():
+                        for point in self.generate(opt=self.opt):
                             f.write(point)
             except IOError as err:
                 logging.error('Error dumping to <%s>: %s', (file, err))
 
         elif not file:  # in-memory dumping
             if compress:
-                points = gzip.compress(b''.join(self.generate()))
+                points = gzip.compress(b''.join(self.generate(opt=self.opt)))
             else:
-                points = b''.join(self.generate())
+                points = b''.join(self.generate(opt=self.opt))
             return points
 
     def __iter__(self):
-        return iter(self.generate())
+        return iter(self.generate(opt=self.opt))
 
 
 
@@ -170,7 +213,7 @@ if __name__ == '__main__':
     print('Testing <to_string>: ', measurement1.to_string(decimals=10))
     print('Testing __repr__:', measurement1)
 
-    dummy = DummyPoints(name='TestSeries', npoints=3, decimals=1, delta_seconds=100)
+    dummy = DummyPoints(name='TestSeries', npoints=5, decimals=1, delta_seconds=100)
     in_memory_not_compressed = dummy.dump()
     print('Not compressed: ', in_memory_not_compressed)
     in_memory_compressed = dummy.dump(compress=True)
@@ -178,6 +221,30 @@ if __name__ == '__main__':
 
     dummy.dump('dump.txt')
     dummy.dump('dump.gz', compress=True)
+
+
+    dummy2 = DummyPoints(name='TestSeries', npoints=5, decimals=1, delta_seconds=1, opt='single_series')
+    for i in range(0, 5):
+        print(dummy2.dump())
+
+    container = Container(measurement2)
+    print(container.points)
+    container.append(measurement1)
+    container.append(measurement2)
+    container.append(measurement3)
+    container.append(measurement1, measurement2, measurement3)
+    container.append(*(measurement1, measurement2, measurement3))
+
+    print(container.dump())
+
+    for m in container:
+        print(m.to_string())
+
+    print(container)
+
+
+
+
 
 
 

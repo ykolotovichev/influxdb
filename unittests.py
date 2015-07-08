@@ -1,20 +1,16 @@
 __author__ = 'Yury A. Kolotovichev'
 
-
 import unittest
-from measurements import Measurement, DummyPoints
+from measurements import Measurement, DummyPoints, Container
 from influxdb import InfluxDBClient
 import multiprocessing
-import math
-from ykolutils.timing import Timer
-from ykolutils.monitoring import get_remote_directory_size
-from time import time, strftime, localtime, sleep
+from time import time
 import logging
 
 
 class DBClientTest(unittest.TestCase):
 
-    #host = '46.101.128.140'
+    # host = '46.101.128.140'
     host = '10.6.74.70'
 
     port = 8086
@@ -29,11 +25,11 @@ class DBClientTest(unittest.TestCase):
 
         self.single_point = Measurement(name=self.series,
                                         fields={'X': -100, 'Y': 720.0, 'T':  30.0},
-                                        timestamp='2015-12-30 10:36:43.567')
+                                        timestamp='2013-12-30 10:36:43.567')
 
         self.dummies = DummyPoints(self.series, npoints=1000, decimals=4, delta_seconds=600)
 
-        self.dbclient = InfluxDBClient(host=self.host, port=self.port, http_timeout=600)
+        self.dbclient = InfluxDBClient(host=self.host, port=self.port, http_timeout=600, http_retries=3)
         self.dbclient.create_database(self.dbname)
 
         self.startTime = time()
@@ -44,60 +40,94 @@ class DBClientTest(unittest.TestCase):
 
         self.dbclient.drop_database(self.dbname)
 
-    @unittest.skip("Skipped")
+    #@unittest.skip("Skipped")
     def test_InfluxDBClient_constructor(self):
-        dbclient = InfluxDBClient(host=self.host, port=self.port, http_timeout=60)
+        dbclient = InfluxDBClient(host=self.host, port=self.port, http_timeout=60, http_retries=3)
         print(dbclient)
 
-    @unittest.skip("Skipped")
+    #@unittest.skip("Skipped")
     def test_create_database(self):
-        dbclient = InfluxDBClient(host=self.host, port=self.port, http_timeout=60)
-        dbclient.create_database(self.dbname)
+        self.dbclient.create_database(self.dbname)
 
-    @unittest.skip("Skipped")
+    #@unittest.skip("Skipped")
     def test_write_single_Measurement(self):
-        self.dbclient.write(dbname=self.dbname, points=self.single_point.to_bytes(), precision='n')
+        r = self.dbclient.write(dbname=self.dbname, points=self.single_point.to_bytes(), precision='n')
+        self.assertEqual(r.status_code, 204)
 
-    @unittest.skip("Skipped")
+    #@unittest.skip("Skipped")
+    def test_query(self):
+        self.dbclient.write(dbname=self.dbname, points=self.single_point.to_bytes(), precision='n')
+        q = self.dbclient.query(dbname=self.dbname, query='SELECT * FROM %s' % self.series)
+        print('Single point query: ', q)
+        self.assertEqual(q['results'][0]['series'][0]['values'][0][1], 30)
+
+    #@unittest.skip("Skipped")
     def test_write_in_memory_dumped_bytearray(self):
         # bytearray (or bytes, dumped in-memory) (non-chunked, not compressed)
         self.dbclient.write(dbname=self.dbname, points=self.dummies.dump(), precision='n')
 
-    @unittest.skip("Skipped")
-    def test_chunked_write(self):
-        # generator (chunked HTTP POST)
-        self.dbclient.write(dbname=self.dbname, points=self.dummies, precision='n')
+    #@unittest.skip("Skipped")
+    def test_write_container(self):
 
-    @unittest.skip("Skipped")
-    def test_write_gzipped_from_memory(self):
-        # bytearray (or bytes, dumped in-memory) (non-chunked, compressed)
-        self.dbclient.write(dbname=self.dbname, points=self.dummies.dump(compress=True), precision='n', gzipped=True)
+        measurement1 = Measurement(name='TestSeries1',
+                                   fields={'X': -100, 'Y': 720.0, 'T':  30.0},
+                                   timestamp='2013-12-30 10:36:43.567')
+
+        measurement2 = Measurement(name='TestSeries1',
+                                   fields={'X': -200, 'Y': 700.0, 'T':  25.0},
+                                   timestamp='2013-12-30 10:37:43.567')
+
+        measurement3 = Measurement(name='TestSeries1',
+                                   fields={'X': -20, 'Y': 70.0, 'T':  15.0},
+                                   timestamp='2013-12-30 10:38:43.567')
+
+        container = Container(measurement1, measurement2)
+        container.append(measurement3)
+        print(container)
+
+        self.dbclient.write(dbname=self.dbname, points=container.dump(decimals=4), precision='n')
 
     #@unittest.skip("Skipped")
-    def test_write_100000_points_in_10000_chunks_single_process(self):
-        for chunk in range(0, 10):
+    def test_chunked_write(self):
+        # generator (chunked HTTP POST)
+        r = self.dbclient.write(dbname=self.dbname, points=self.dummies, precision='n')
+        self.assertEqual(r.status_code, 204)
+
+    #@unittest.skip("Skipped")
+    def test_write_gzipped_from_memory(self):
+        # bytearray (or bytes, dumped in-memory) (non-chunked, compressed)
+        r = self.dbclient.write(dbname=self.dbname, points=self.dummies.dump(compress=True), precision='n', gzipped=True)
+        self.assertEqual(r.status_code, 204)
+
+    #@unittest.skip("Skipped")
+    def test_bulk_write_into_single_series(self):
+        dummies = DummyPoints(self.series, npoints=5000, decimals=4, delta_seconds=600, opt='single_series')
+        #print(dummies.dump())
+        r = self.dbclient.write(dbname=self.dbname, points=dummies.dump(), precision='n')
+        self.assertEqual(r.status_code, 204)
+
+    #@unittest.skip("Skipped")
+    def test_write_100000_points_in_5000_chunks_single_process(self):
+        for chunk in range(0, 20):
             print('Sending chunk ', chunk)
-            dummies = DummyPoints(self.series, npoints=10000, decimals=4, delta_seconds=600)
+            dummies = DummyPoints(self.series, npoints=5000, decimals=4, delta_seconds=600, opt='one_point_per_series')
             pts = dummies.dump()
             print('Sent bytes: ', len(pts))
-            self.dbclient.write(dbname=self.dbname, points=dummies, precision='n')
-
-        sleep(10)
-        r = self.dbclient.query(self.dbname, 'SELECT count(Y) from %s where time < now() + 36500d' % self.series)
-        print(r)
+            r = self.dbclient.write(dbname=self.dbname, points=dummies.dump(), precision='n')
+            self.assertEqual(r.status_code, 204)
 
     def write_worker(self, npoints, nchunks):
         for chunk in range(0, nchunks):
             print('Sending chunk ', chunk)
-            dummies = DummyPoints(self.series, npoints=npoints, decimals=4, delta_seconds=6000)
+            dummies = DummyPoints(self.series, npoints=npoints, decimals=4, delta_seconds=6000, opt='one_point_per_series')
             self.dbclient.write(dbname=self.dbname, points=dummies.dump(), precision='n')
 
     @unittest.skip("Skipped")
     def test_write_100000_points_in_10000_chunks_multiprocess(self):
 
-        nworkers = 4
-        npoints = 10000
-        nchunks = 5
+        nworkers = 20
+        npoints = 1000
+        nchunks = 10
 
         workers = []
         for i in range(nworkers):
@@ -111,73 +141,11 @@ class DBClientTest(unittest.TestCase):
 
 
 
-        sleep(10)
-        r = self.dbclient.query(self.dbname, 'SELECT count(Y) from %s where time < now() + 36500d' % self.series)
-        print(r)
 
 
 
 
-
-def influx_sender(host, port, dbname, dummies):
-    dbclient = InfluxDBClient(host=host, port=port, http_timeout=60)
-    dbclient.write(dbname=dbname, points=dummies, precision='n')
-
-
-
-
-
-
-
-
-
-def send_to_influx(dbclient, dbname, series, name, npoints, maxchunk):
-
-    def chunksize_gen(n, chunk):  # generates chunks sizes
-        """
-         n - number of points to be send by each system
-         chunk - maximum number of points in single JSON
-        """
-
-        for i in range(int(n / chunk + math.ceil((n % chunk) / chunk))):
-            n -= chunk
-            chunksize = chunk if n >= 0 else n+chunk
-            yield chunksize
-
-    with Timer(name):
-
-        for parcel_num, chunk_size in enumerate(chunksize_gen(npoints, maxchunk)):
-
-            #points = ''.join(points_generator(name, chunk_size, decimals=3))
-
-            print('%s: Sending parsel %d' % (name, int(parcel_num+1)))
-            try:
-                dummies = DummyPoints(series, npoints=chunk_size, decimals=3, delta_seconds=600)
-                #print(dummies.dump())
-                #dbclient.write(dbname, points=dummies, gzipped=False)
-                dbclient.write(dbname=dbname, points=dummies.dump(), precision='n')
-                print('%s: Points sent: %d' % (name, chunk_size))
-            except Exception as err:
-                print('%s: Error writing data: %s' % (name, err))
-
-
-def write_in_threads():
-
-    print('%d points will be sent by every of %d measurement1 system. TOTAL: %d ' % (N, NSYS, N*NSYS))
-    print('Points per JSON parcel: ', CHUNK)
-
-    threads = []
-    for i in range(NSYS):
-        t = multiprocessing.Process(target=send_to_influx, args=(), kwargs={'series': 'Tilt_' + str(i+1),
-                                                                            'npoints': N,
-                                                                            'maxchunk': CHUNK,
-                                                                            'dbclient': dbclient,
-                                                                            'dbname': dbname,
-                                                                            'name': 'Thread ' + str(i+1)})
-        threads.append(t)
-        t.start()
-    return threads
-
+"""
 def stats():
 
     q = dbclient.query(dbname, 'SELECT count(Y) from /Tilt_*/ where time < now() + 36500d')
@@ -221,7 +189,7 @@ def gather_stats():
             sleep(2)
         except Exception:
             print('Data bug')
-
+"""
 
 if __name__ == '__main__':
     # -----DB settings----------------- #
@@ -238,7 +206,7 @@ if __name__ == '__main__':
 
 
     logging.basicConfig(format='%(levelname)-8s [%(asctime)s]  %(message)s',
-                        level=logging.DEBUG)
+                        level=logging.WARNING)
 
     unittest.main(verbosity=2)
 
