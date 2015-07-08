@@ -17,9 +17,8 @@ sudo dpkg -i influxdb_0.9.1_amd64.deb
 echo "Generating config  /etc/opt/influxdb/influxdb.conf"
 sudo /opt/influxdb/influxd config > $HOME/influxdb.conf
 sudo sed  -i 's#/root/.influxdb#/var/opt/influxdb#g' $HOME/influxdb.conf
-
 sudo mv $HOME/influxdb.conf /etc/opt/influxdb/influxdb.conf
-
+echo "Config generated"
 
 
 echo "Starting daemon...."
