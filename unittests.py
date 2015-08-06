@@ -11,7 +11,7 @@ import logging
 class DBClientTest(unittest.TestCase):
 
     # host = '46.101.128.140'
-    host = '10.6.74.70'
+    host = '10.6.74.60'
 
     port = 8086
 
@@ -106,7 +106,7 @@ class DBClientTest(unittest.TestCase):
         r = self.dbclient.write(dbname=self.dbname, points=dummies.dump(), precision='n')
         self.assertEqual(r.status_code, 204)
 
-    #@unittest.skip("Skipped")
+    @unittest.skip("Skipped")
     def test_write_100000_points_in_5000_chunks_single_process(self):
         for chunk in range(0, 20):
             print('Sending chunk ', chunk)
